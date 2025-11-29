@@ -1,0 +1,4 @@
+Flask==3.0.3
+requests==2.28.0
+flask-cors==3.0.10
+pyexecjs
