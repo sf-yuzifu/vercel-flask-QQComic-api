@@ -4,7 +4,6 @@ from PIL import Image
 import logging
 import requests
 import re
-import execjs
 import json
 import base64
 import logging
@@ -191,8 +190,22 @@ class ComicParser:
                 if len(nonce_matches) < 2:
                     return {"error": "未找到nonce数据"}
 
-                nonce = "=".join(nonce_matches[1].split("=")[1:])[:-1]
-                nonce = execjs.eval(nonce)
+                nonce_expression = "=".join(nonce_matches[1].split("=")[1:])[:-1]
+
+                # 纯Python解析JavaScript表达式
+                if "+" in nonce_expression:
+                    parts = nonce_expression.split("+")
+                    nonce = ""
+                    for part in parts:
+                        part = part.strip()
+                        if (part.startswith("'") and part.endswith("'")) or (
+                            part.startswith('"') and part.endswith('"')
+                        ):
+                            nonce += part[1:-1]
+                        else:
+                            nonce += part
+                else:
+                    nonce = nonce_expression.strip("'\"")
 
                 # 解密数据
                 T = list(data)
