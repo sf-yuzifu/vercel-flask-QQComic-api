@@ -83,6 +83,23 @@ class ComicParser:
         title = title_match.group(1) if title_match else "未知标题"
         comic_title = title.split("-")[0].strip() if "-" in title else title
 
+        # 提取封面图片
+
+        cover_match = re.search(
+            r'<div class="works-cover[^"]*">\s*<a[^>]*>\s*<img src="([^"]*)"[^>]*>',
+            resp.text,
+        )
+
+        if cover_match:
+            cover_url = cover_match.group(1)
+            # 处理可能的相对路径
+            if cover_url.startswith("//"):
+                cover_url = "https:" + cover_url
+            elif cover_url.startswith("/"):
+                cover_url = "https://ac.qq.com" + cover_url
+        else:
+            cover_url = None
+
         # 提取人气信息 - 匹配你提供的HTML结构
         popularity_match = re.search(r"<span>人气：<em>(.*?)</em></span>", resp.text)
         popularity = popularity_match.group(1).strip() if popularity_match else "未知"
@@ -152,6 +169,7 @@ class ComicParser:
             "popularity": popularity,
             "rating": rating,
             "chapters": chapters,
+            "cover_url": cover_url,  # 新增封面URL
             "total_chapters": len(chapters),
         }
 
