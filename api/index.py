@@ -256,13 +256,11 @@ class ComicParser:
 
 
 # 同时，在获取章节图片数据的部分，修改图片URL为代理URL
-def get_proxy_image_url(original_url, width=600, quality=50):
+def get_proxy_image_url(original_url, width=600, quality=50, number=0):
     """生成图片代理URL"""
     from urllib.parse import quote
 
-    proxy_url = (
-        f"/image/proxy?url={quote(original_url)}&width={width}&quality={quality}"
-    )
+    proxy_url = f"/image/proxy?url={quote(original_url)}&width={width}&quality={quality}&{number}"
     return proxy_url
 
 
@@ -271,10 +269,14 @@ def modify_chapter_images_data(chapter_data):
     """修改章节数据中的图片URL为代理URL"""
     if chapter_data.get("success") and "data" in chapter_data:
         pictures = chapter_data["data"].get("picture", [])
+        number = 0
         for pic in pictures:
+            number += 1
             if "url" in pic:
                 pic["original_url"] = pic["url"]  # 保留原始URL
-                pic["url"] = get_proxy_image_url(pic["url"])  # 替换为代理URL
+                pic["url"] = get_proxy_image_url(
+                    pic["url"], number=number
+                )  # 替换为代理URL
     return chapter_data
 
 
