@@ -11,7 +11,7 @@ import logging
 from typing import Dict, List, Optional
 import sys
 import time
-from urllib.parse import quote, urlencode
+from urllib.parse import unquote, quote, urlencode
 
 sys.stdout.reconfigure(encoding="utf-8")
 
