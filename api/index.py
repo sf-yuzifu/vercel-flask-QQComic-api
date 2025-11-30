@@ -203,14 +203,17 @@ class ComicParser:
         }
 
     @staticmethod
-    def get_chapter_images(chapter_url: str) -> Dict:
+    def get_chapter_images(chapter_url: str, cookie) -> Dict:
         """获取章节图片数据"""
         max_retries = 3
         retry_count = 0
 
         while retry_count < max_retries:
             try:
-                resp = requests.get(chapter_url, headers=Config.HEADERS)
+                headers = Config.HEADERS.copy()
+                if cookie:
+                    headers["Cookie"] = cookie
+                resp = requests.get(chapter_url, headers=headers)
                 if resp.status_code != 200:
                     return {"error": f"章节请求失败，状态码: {resp.status_code}"}
 
@@ -505,9 +508,10 @@ def get_comic_info(comic_id: str):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/comic/<comic_id>/chapter/<int:chapter_number>")
+@app.route("/comic/<comic_id>/chapter/<int:chapter_number>", methods=["GET", "POST"])
 def get_specific_chapter(comic_id: str, chapter_number: int):
     """获取特定章节信息"""
+    cookie = request.json.get("cookie") if request.is_json else None
     try:
         comic_info = ComicParser.get_comic_info(comic_id)
         if "error" in comic_info:
@@ -524,7 +528,7 @@ def get_specific_chapter(comic_id: str, chapter_number: int):
             return jsonify({"error": f"未找到第 {chapter_number} 章"}), 404
 
         # 获取章节图片数据
-        images_data = ComicParser.get_chapter_images(target_chapter["link"])
+        images_data = ComicParser.get_chapter_images(target_chapter["link"], cookie)
 
         return jsonify(
             {
