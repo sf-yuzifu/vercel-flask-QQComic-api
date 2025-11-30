@@ -508,10 +508,14 @@ def get_comic_info(comic_id: str):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/comic/<comic_id>/chapter/<int:chapter_number>")
+@app.route("/comic/<comic_id>/chapter/<int:chapter_number>", methods=["GET", "POST"])
 def get_specific_chapter(comic_id: str, chapter_number: int):
     """获取特定章节信息"""
-    cookie = request.headers.get("QQComic-Cookie") if request.headers.get("QQComic-Cookie") else None
+    cookie = (
+        request.headers.get("QQComic-Cookie")
+        if request.headers.get("QQComic-Cookie")
+        else None
+    )
     try:
         comic_info = ComicParser.get_comic_info(comic_id)
         if "error" in comic_info:
