@@ -516,6 +516,7 @@ def get_specific_chapter(comic_id: str, chapter_number: int):
         if request.headers.get("QQComic-Cookie")
         else None
     )
+    print(f"使用的Cookie: {cookie}")
     try:
         comic_info = ComicParser.get_comic_info(comic_id)
         if "error" in comic_info:
