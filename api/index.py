@@ -10,6 +10,8 @@ import base64
 import logging
 from typing import Dict, List, Optional
 import sys
+import time
+from urllib.parse import quote, urlencode
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -17,6 +19,33 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 app.debug = False
 app.json.ensure_ascii = False
+
+
+def decode_search_value(value: str) -> str:
+    """
+    判断并解码搜索值
+    如果值是URL编码，则解码为中文，否则直接返回
+    """
+    # URL编码的特征：包含%后跟两个十六进制字符
+    url_encoded_pattern = r"%[0-9A-Fa-f]{2}"
+
+    # 如果包含URL编码特征，尝试解码
+    if re.search(url_encoded_pattern, value):
+        try:
+            decoded = unquote(value)
+            # 解码后如果还包含URL编码特征，说明可能有多重编码，继续解码
+            while re.search(url_encoded_pattern, decoded):
+                temp = unquote(decoded)
+                if temp == decoded:  # 如果没有变化，停止解码
+                    break
+                decoded = temp
+            return decoded
+        except Exception:
+            # 如果解码失败，返回原值
+            return value
+    else:
+        # 没有URL编码特征，直接返回
+        return value
 
 
 # 配置
@@ -280,6 +309,185 @@ def modify_chapter_images_data(chapter_data):
     return chapter_data
 
 
+class ComicSearch:
+    def __init__(self):
+        self.base_url = "https://m.ac.qq.com"
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+        }
+
+    def _check_has_next(
+        self, keyword: str, current_page: int, current_count: int
+    ) -> bool:
+        """
+        检查是否有下一页
+
+        Args:
+            keyword: 搜索关键词
+            current_page: 当前页码
+            current_count: 当前页结果数量
+
+        Returns:
+            是否有下一页
+        """
+        try:
+            # 直接请求下一页看看是否有内容
+            timestamp = int(time.time() * 1000)
+            params = {
+                "_t": timestamp,
+                "word": keyword,
+                "page": current_page + 1,
+                "pageSize": 10,
+                "style": "items",
+            }
+
+            url = f"{self.base_url}/search/result?{urlencode(params)}"
+            response = requests.get(url, headers=self.headers, timeout=5)
+            response.encoding = "utf-8"
+
+            if response.status_code == 200:
+                next_results = self._parse_search_results(response.text)
+                return len(next_results) > 0
+            else:
+                return False
+
+        except:
+            # 如果请求失败，认为没有下一页
+            return False
+
+    def search_comics_direct(self, keyword: str, page: int = 1) -> Dict:
+        """
+        直接搜索漫画，返回API原始结果
+
+        Args:
+            keyword: 搜索关键词
+            page: 页码
+
+        Returns:
+            搜索结果的原始数据
+        """
+        try:
+            timestamp = int(time.time() * 1000)
+            params = {
+                "_t": timestamp,
+                "word": keyword,
+                "page": page,
+                "pageSize": 10,  # 可以适当调大一些
+                "style": "items",
+            }
+
+            url = f"{self.base_url}/search/result?{urlencode(params)}"
+            print(f"请求搜索URL: {url}")
+
+            response = requests.get(url, headers=self.headers, timeout=10)
+            response.encoding = "utf-8"
+
+            if response.status_code != 200:
+                return {
+                    "error": f"搜索请求失败，状态码: {response.status_code}",
+                    "keyword": keyword,
+                    "page": page,
+                    "results": [],
+                }
+
+            # 解析结果
+            results = self._parse_search_results(response.text)
+            has_next = self._check_has_next(keyword, page, len(results))
+
+            return {
+                "keyword": keyword,
+                "page": page,
+                "total_results": len(results),
+                "results": results,
+                "has_more": has_next,  # 简单判断是否还有更多结果
+            }
+
+        except Exception as e:
+            return {
+                "error": f"搜索异常: {str(e)}",
+                "keyword": keyword,
+                "page": page,
+                "results": [],
+            }
+
+    def _parse_search_results(self, html: str) -> List[Dict]:
+        """
+        解析搜索结果HTML
+        """
+        comics = []
+        comic_pattern = r'<li class="comic-item">(.*?)</li>'
+        comic_matches = re.findall(comic_pattern, html, re.DOTALL)
+
+        print(f"解析到 {len(comic_matches)} 个漫画条目")
+
+        for comic_html in comic_matches:
+            comic = self._parse_single_comic(comic_html)
+            if comic:
+                comics.append(comic)
+
+        return comics
+
+    def _parse_single_comic(self, comic_html: str) -> Optional[Dict]:
+        """
+        解析单个漫画信息
+        """
+        try:
+            # 提取漫画ID和链接
+            link_match = re.search(r'href="/comic/index/id/(\d+)"', comic_html)
+            if not link_match:
+                return None
+
+            comic_id = link_match.group(1)
+
+            # 提取标题
+            title_match = re.search(
+                r'<strong class="comic-title">(.*?)</strong>', comic_html
+            )
+            title = title_match.group(1).strip() if title_match else "未知标题"
+
+            # 提取封面图片
+            cover_match = re.search(r'<img class="cover-image" src="(.*?)"', comic_html)
+            cover_url = cover_match.group(1) if cover_match else None
+            if cover_url and cover_url.startswith("//"):
+                cover_url = "https:" + cover_url
+
+            # 提取更新日期
+            update_match = re.search(
+                r'<small class="comic-update">(.*?)</small>', comic_html
+            )
+            update_date = update_match.group(1).strip() if update_match else "未知"
+
+            # 提取标签
+            tag_match = re.search(r'<small class="comic-tag">(.*?)</small>', comic_html)
+            tags = tag_match.group(1).strip() if tag_match else ""
+
+            # 提取描述
+            desc_match = re.search(
+                r'<small class="comic-desc">(.*?)</small>', comic_html, re.DOTALL
+            )
+            description = desc_match.group(1).strip() if desc_match else ""
+
+            return {
+                "comic_id": comic_id,
+                "title": title,
+                "cover_url": cover_url,
+                "update_date": update_date,
+                "tags": tags,
+                "description": description,
+                "detail_url": f"{self.base_url}/comic/index/id/{comic_id}",
+            }
+
+        except Exception as e:
+            print(f"解析漫画信息异常: {e}")
+            return None
+
+
+# 全局搜索实例
+comic_searcher = ComicSearch()
+
+
 # Flask路由
 @app.route("/")
 def index():
@@ -331,6 +539,25 @@ def get_specific_chapter(comic_id: str, chapter_number: int):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.get("/search/<value>")
+@app.get("/search/<value>/")
+@app.get("/search/<value>/<int:client_page>")
+def search_comics(value: str = "", client_page: Optional[int] = 1):
+    """搜索漫画接口"""
+    keyword = decode_search_value(value)
+
+    if client_page < 1:
+        return jsonify({"error": "页码必须大于0"}), 400
+
+    try:
+        # 直接返回API请求结果
+        search_result = comic_searcher.search_comics_direct(keyword, client_page)
+        return jsonify(search_result)
+
+    except Exception as e:
+        return jsonify({"error": f"搜索失败: {str(e)}"}), 500
 
 
 # 在Flask路由部分添加图片代理接口
