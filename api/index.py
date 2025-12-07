@@ -535,7 +535,7 @@ def get_specific_chapter(comic_id: str, chapter_number: int):
 
         # 获取章节图片数据
         images_data = ComicParser.get_chapter_images(target_chapter["link"], cookie)
-        print(f"漫画名称: {comic_info["title"]}")
+        print(f"漫画名称: {comic_info['title']}")
 
         return jsonify(
             {
