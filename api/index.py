@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 import sys
 import time
 from urllib.parse import unquote, quote, urlencode
+from asgiref.wsgi import WsgiToAsgi
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -534,6 +535,7 @@ def get_specific_chapter(comic_id: str, chapter_number: int):
 
         # 获取章节图片数据
         images_data = ComicParser.get_chapter_images(target_chapter["link"], cookie)
+        print(f"漫画名称: {comic_info["title"]}")
 
         return jsonify(
             {
@@ -636,4 +638,6 @@ def image_proxy():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run()
+
+asgi_app = WsgiToAsgi(app)
