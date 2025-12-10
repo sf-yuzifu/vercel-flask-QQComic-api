@@ -289,11 +289,11 @@ class ComicParser:
 
 
 # 同时，在获取章节图片数据的部分，修改图片URL为代理URL
-def get_proxy_image_url(original_url, width=600, quality=50, number=0):
+def get_proxy_image_url(original_url, number=0):
     """生成图片代理URL"""
     from urllib.parse import quote
 
-    proxy_url = f"/image/proxy?url={quote(original_url)}&width={width}&quality={quality}&{number}"
+    proxy_url = f"/image/proxy?url={quote(original_url)}&{number}"
     return proxy_url
 
 
