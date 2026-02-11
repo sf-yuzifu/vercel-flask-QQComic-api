@@ -292,8 +292,9 @@ class ComicParser:
 def get_proxy_image_url(original_url, number=0):
     """生成图片代理URL"""
     from urllib.parse import quote
+    api_url = request.host_url.rstrip("/")
 
-    proxy_url = f"/image/proxy?url={quote(original_url)}&{number}"
+    proxy_url = f"{api_url}/image/proxy?url={quote(original_url)}&{number}"
     return proxy_url
 
 
@@ -493,6 +494,24 @@ comic_searcher = ComicSearch()
 
 
 # Flask路由
+@app.get("/config")
+@app.get("/config/")
+def get_config():
+    """获取漫画源配置信息"""
+    api_url = request.host_url.rstrip("/")
+    config = {
+        "QQComic": {
+            "name": "腾讯动漫",
+            "apiUrl": api_url,
+            "detailPath": "/comic/<id>",
+            "photoPath": "/photo/<id>/chapter/<chapter>",
+            "searchPath": "/search/<text>/<page>",
+            "type": "qqcomic"
+        }
+    }
+    return jsonify(config)
+
+
 @app.route("/")
 def index():
     return "it works!"
@@ -504,17 +523,30 @@ def get_comic_info(comic_id: str):
     """获取漫画信息接口"""
     try:
         info = ComicParser.get_comic_info(comic_id)
-        return jsonify(info)
+        if "error" in info:
+            return jsonify(info), 500
+        
+        result = {
+            "item_id": int(comic_id),
+            "name": info.get("title", ""),
+            "page_count": 0,
+            "views": info.get("popularity", "0"),
+            "rate": float(info.get("rating", {}).get("score", "0")),
+            "cover": info.get("cover_url", ""),
+            "tags": info.get("tags", []),
+            "total_chapters": info.get("total_chapters", 0)
+        }
+        return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/comic/<comic_id>/chapter/<int:chapter_number>", methods=["GET", "POST"])
+@app.route("/photo/<comic_id>/chapter/<int:chapter_number>", methods=["GET", "POST"])
 def get_specific_chapter(comic_id: str, chapter_number: int):
-    """获取特定章节信息"""
+    """获取特定章节图片信息"""
     cookie = (
-        request.headers.get("QQComic-Cookie")
-        if request.headers.get("QQComic-Cookie")
+        request.headers.get("Cookie")
+        if request.headers.get("Cookie")
         else None
     )
     print(f"使用的Cookie: {cookie}")
@@ -523,7 +555,6 @@ def get_specific_chapter(comic_id: str, chapter_number: int):
         if "error" in comic_info:
             return jsonify(comic_info), 500
 
-        # 查找指定章节
         target_chapter = None
         for chapter in comic_info["chapters"]:
             if chapter["number"] == chapter_number:
@@ -533,20 +564,24 @@ def get_specific_chapter(comic_id: str, chapter_number: int):
         if not target_chapter:
             return jsonify({"error": f"未找到第 {chapter_number} 章"}), 404
 
-        # 获取章节图片数据
         images_data = ComicParser.get_chapter_images(target_chapter["link"], cookie)
         print(f"漫画名称: {comic_info['title']}")
 
-        return jsonify(
-            {
-                "comic_info": {
-                    "comic_id": comic_id,
-                    "title": comic_info["title"],
-                },
-                "chapter_info": target_chapter,
-                "images_data": images_data,
-            }
-        )
+        if not images_data.get("success"):
+            return jsonify({"error": images_data.get("error", "获取图片失败")}), 500
+
+        chapter_data = images_data.get("data", {})
+        pictures = chapter_data.get("picture", [])
+
+        images = []
+        for pic in pictures:
+            images.append({"url": pic.get("url", "")})
+
+        result = {
+            "title": target_chapter.get("title", ""),
+            "images": images
+        }
+        return jsonify(result)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -563,9 +598,25 @@ def search_comics(value: str = "", client_page: Optional[int] = 1):
         return jsonify({"error": "页码必须大于0"}), 400
 
     try:
-        # 直接返回API请求结果
         search_result = comic_searcher.search_comics_direct(keyword, client_page)
-        return jsonify(search_result)
+        
+        if "error" in search_result:
+            return jsonify(search_result), 500
+
+        results = []
+        for comic in search_result.get("results", []):
+            results.append({
+                "comic_id": int(comic.get("comic_id", 0)),
+                "title": comic.get("title", ""),
+                "cover_url": comic.get("cover_url", ""),
+                "pages": 0
+            })
+
+        return jsonify({
+            "page": search_result.get("page", client_page),
+            "has_more": search_result.get("has_more", False),
+            "results": results
+        })
 
     except Exception as e:
         return jsonify({"error": f"搜索失败: {str(e)}"}), 500
